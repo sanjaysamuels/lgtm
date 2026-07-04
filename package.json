@@ -1,0 +1,20 @@
+{
+  "name": "lgtm",
+  "version": "0.1.0",
+  "description": "AI pull-request review with a local triage GUI: fetch a PR, review it to high standards with Claude, triage findings in the browser, post comments back to GitHub. Now you can say LGTM and mean it.",
+  "type": "module",
+  "bin": {
+    "lgtm": "bin/lgtm.ts"
+  },
+  "scripts": {
+    "review": "node bin/lgtm.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>lgtm — triage</title>
+<style>
+  :root {
+    --bg: #f5f8f6; --surface: #fff; --surface-2: #eef2ef; --text: #16201a;
+    --text-muted: #5c6b62; --border: #dde5df; --border-strong: #c6d2c9;
+    --accent: #1f7a4d; --accent-soft: #e4f0ea;
+    --critical: #bd3a33; --critical-bg: #fbecea; --warning: #9a6f14; --warning-bg: #f7efd9;
+    --info: #3a6297; --info-bg: #e9f0f8; --praise: #1f7a4d; --praise-bg: #e4f0ea;
+    --shadow: 0 1px 2px rgba(20,40,28,.04), 0 4px 16px rgba(20,40,28,.05);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1512; --surface: #141d18; --surface-2: #1b251f; --text: #e6efe8;
+      --text-muted: #93a89b; --border: #24302a; --border-strong: #33463a;
+      --accent: #52b988; --accent-soft: #16281f;
+      --critical: #e8756c; --critical-bg: #291715; --warning: #d6a94a; --warning-bg: #241d12;
+      --info: #83abe0; --info-bg: #16212e; --praise: #52b988; --praise-bg: #16281f;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px 120px; }
+  a { color: var(--accent); }
+
+  header.top { border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 20; box-shadow: var(--shadow); }
+  .top-inner { max-width: 980px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  .brand .sub { font-size: 12px; color: var(--text-muted); }
+  .counter { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .counter b { color: var(--text); }
+  .btn { font-family: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); padding: 8px 14px; border-radius: 8px; cursor: pointer; transition: background .12s, border-color .12s, transform .05s; }
+  .btn:hover { background: var(--surface-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .pr { margin: 24px 0 8px; padding: 20px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+  .pr h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.02em; text-wrap: balance; }
+  .pr .meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); align-items: center; }
+  .pr .meta a { font-weight: 600; text-decoration: none; }
+  .pr .meta a:hover { text-decoration: underline; }
+  .pr .meta .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--border-strong); }
+  .stack-chip { font-family: var(--mono); font-size: 11px; background: var(--surface-2); padding: 2px 8px; border-radius: 6px; color: var(--text-muted); }
+  .summary { margin: 10px 0 0; font-size: 14px; color: var(--text); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 6px; }
+  @media (max-width: 640px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: border-color .12s, opacity .12s; position: relative; overflow: hidden; }
+  .stat::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background: var(--sev); }
+  .stat[data-active="false"] { opacity: .5; }
+  .stat:hover { border-color: var(--border-strong); }
+  .stat .n { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .stat .l { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  .stat.critical { --sev: var(--critical); } .stat.critical .n { color: var(--critical); }
+  .stat.warning { --sev: var(--warning); } .stat.warning .n { color: var(--warning); }
+  .stat.info { --sev: var(--info); } .stat.info .n { color: var(--info); }
+  .stat.praise { --sev: var(--praise); } .stat.praise .n { color: var(--praise); }
+
+  .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600; margin: 28px 4px 12px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 14px; box-shadow: var(--shadow); overflow: hidden; border-left: 4px solid var(--sev, var(--border)); }
+  .card.critical { --sev: var(--critical); } .card.warning { --sev: var(--warning); }
+  .card.info { --sev: var(--info); } .card.praise { --sev: var(--praise); }
+  .card.dismissed { opacity: .48; }
+  .card.dismissed .card-body { display: none; }
+  .card-head { padding: 15px 18px; display: flex; align-items: flex-start; gap: 12px; }
+  .card-head .grow { flex: 1; min-width: 0; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+  .pill.critical { background: var(--critical-bg); color: var(--critical); }
+  .pill.warning { background: var(--warning-bg); color: var(--warning); }
+  .pill.info { background: var(--info-bg); color: var(--info); }
+  .cat { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .verify { font-size: 10.5px; font-weight: 650; color: var(--warning); border: 1px solid var(--warning); padding: 1px 6px; border-radius: 5px; text-transform: uppercase; letter-spacing:.03em; }
+  .title { font-size: 15.5px; font-weight: 650; margin: 8px 0 4px; letter-spacing: -.01em; text-wrap: balance; }
+  .loc { font-family: var(--mono); font-size: 12px; color: var(--text-muted); word-break: break-all; }
+  .loc b { color: var(--accent); font-weight: 600; }
+
+  .card-body { padding: 0 18px 18px; }
+  .block { margin-top: 14px; }
+  .block .h { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 650; margin-bottom: 5px; }
+  .block p { margin: 0; font-size: 14px; }
+  pre { margin: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
+  pre .add { color: var(--praise); } pre .del { color: var(--critical); }
+
+  .comment-wrap { margin-top: 16px; border-top: 1px dashed var(--border-strong); padding-top: 14px; }
+  .comment-wrap .h { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 650; margin-bottom: 6px; }
+  textarea { width: 100%; font-family: var(--sans); font-size: 13.5px; color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: 9px; padding: 10px 12px; resize: vertical; min-height: 62px; line-height: 1.45; }
+  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+  .seg button { font-family: inherit; font-size: 12.5px; font-weight: 600; border: 0; background: var(--surface); color: var(--text-muted); padding: 6px 13px; cursor: pointer; transition: background .1s, color .1s; }
+  .seg button:first-child { border-right: 1px solid var(--border-strong); }
+  .seg button.on-keep { background: var(--accent); color: #fff; }
+  .seg button.on-dismiss { background: var(--surface-2); color: var(--text); }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .strengths { background: var(--praise-bg); border: 1px solid var(--border); border-left: 4px solid var(--praise); border-radius: 12px; padding: 16px 18px; }
+  .strengths .h { font-size: 12px; text-transform: uppercase; letter-spacing:.06em; color: var(--praise); font-weight: 700; margin-bottom: 8px; }
+  .strengths ul { margin: 0; padding-left: 18px; }
+  .strengths li { font-size: 13.5px; margin: 4px 0; }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(10,20,14,.55); display: none; z-index: 50; align-items: center; justify-content: center; padding: 20px; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; max-width: 640px; width: 100%; max-height: 84vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  .modal h3 { margin: 0; padding: 18px 20px 4px; font-size: 16px; }
+  .modal .desc { padding: 0 20px; font-size: 13px; color: var(--text-muted); margin: 4px 0 0; }
+  .modal .events { display: flex; gap: 8px; padding: 14px 20px 4px; flex-wrap: wrap; }
+  .evt { flex: 1; min-width: 150px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; cursor: pointer; font-size: 13px; }
+  .evt.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .evt .t { font-weight: 650; }
+  .evt .d { font-size: 11.5px; color: var(--text-muted); }
+  .modal .preview { margin: 12px 20px; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; overflow-y: auto; font-size: 12.5px; }
+  .modal .preview li { margin: 3px 0; }
+  .modal .foot { padding: 14px 20px 18px; display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+  .modal .status { margin-right: auto; font-size: 13px; color: var(--text-muted); }
+  .status.ok { color: var(--praise); } .status.err { color: var(--critical); }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity .2s, transform .2s; z-index: 60; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <div class="dot"></div>
+      <div><h1>lgtm</h1><div class="sub">AI review · you decide what ships</div></div>
+    </div>
+    <div class="counter"><b id="keepCount">0</b> to post · <span id="dismissCount">0</span> dismissed</div>
+    <button class="btn primary" id="postBtn">Post to GitHub →</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="pr">
+    <h2 id="prTitle"></h2>
+    <div class="meta" id="prMeta"></div>
+    <p class="summary" id="prSummary"></p>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="section-label" id="findingsLabel">Findings</div>
+  <div id="findings"></div>
+
+  <div id="strengthsWrap" style="display:none">
+    <div class="section-label">What's good — worth calling out</div>
+    <div class="strengths"><div class="h">Strengths</div><ul id="strengthsList"></ul></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3>Post review to GitHub</h3>
+    <p class="desc" id="modalDesc"></p>
+    <div class="events" id="events">
+      <div class="evt sel" data-evt="COMMENT"><div class="t">Comment</div><div class="d">Leave feedback, no verdict</div></div>
+      <div class="evt" data-evt="REQUEST_CHANGES"><div class="t">Request changes</div><div class="d">Block until addressed</div></div>
+      <div class="evt" data-evt="APPROVE"><div class="t">Approve</div><div class="d">Sign off on the PR</div></div>
+    </div>
+    <ul class="preview" id="preview"></ul>
+    <div class="foot">
+      <span class="status" id="postStatus"></span>
+      <button class="btn" id="closeModal">Cancel</button>
+      <button class="btn primary" id="confirmPost">Post</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script id="review-data" type="application/json">__REVIEW_DATA__</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById("review-data").textContent);
+  var findings = DATA.findings || [];
+  var state = {};
+  findings.forEach(function (f) { state[f.id] = { keep: true, comment: f.comment }; });
+  var activeSev = { critical: true, warning: true, info: true };
+  var event = "COMMENT";
+
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function renderCode(code) {
+    return esc(code).split("\n").map(function (line) {
+      if (line.charAt(0) === "+") return '<span class="add">' + line + "</span>";
+      if (line.charAt(0) === "-") return '<span class="del">' + line + "</span>";
+      return line;
+    }).join("\n");
+  }
+
+  // PR header
+  var pr = DATA.pr;
+  document.getElementById("prTitle").textContent = pr.title;
+  document.getElementById("prMeta").innerHTML =
+    '<span>PR <a href="' + esc(pr.url) + '" target="_blank" rel="noopener">#' + pr.number + "</a></span>" +
+    '<span class="sep"></span><span>by <b style="color:var(--text)">' + esc(pr.author) + "</b></span>" +
+    '<span class="sep"></span><span style="color:var(--praise);font-weight:600">+' + pr.additions + "</span>" +
+    '<span style="color:var(--critical);font-weight:600">-' + pr.deletions + "</span>" +
+    '<span class="sep"></span><span>' + pr.changedFiles + " files</span>" +
+    '<span class="sep"></span><span>into <code style="font-family:var(--mono);font-size:12px">' + esc(pr.baseRefName) + "</code></span>" +
+    '<span class="sep"></span><span class="stack-chip">' + esc(pr.stack) + "</span>";
+  if (DATA.summary) document.getElementById("prSummary").textContent = DATA.summary;
+
+  // Stat tiles
+  var counts = { critical: 0, warning: 0, info: 0 };
+  findings.forEach(function (f) { if (counts[f.sev] != null) counts[f.sev]++; });
+  var tiles = [
+    ["critical", counts.critical, "Correctness"],
+    ["warning", counts.warning, "Should fix"],
+    ["info", counts.info, "Nits / verify"],
+    ["praise", (DATA.strengths || []).length, "Strengths"],
+  ];
+  document.getElementById("stats").innerHTML = tiles.map(function (t) {
+    return '<div class="stat ' + t[0] + '" data-sev="' + t[0] + '" data-active="true">' +
+      '<div class="n">' + t[1] + '</div><div class="l">' + t[2] + "</div></div>";
+  }).join("");
+
+  document.getElementById("findingsLabel").textContent =
+    "Findings — reviewed to high standards for " + pr.stack;
+
+  // Finding cards
+  var container = document.getElementById("findings");
+  if (!findings.length) {
+    container.innerHTML = '<div class="card"><div class="card-head"><div class="grow">' +
+      '<div class="title">No findings — the reviewer flagged nothing to change.</div></div></div></div>';
+  }
+  findings.forEach(function (f) {
+    var card = document.createElement("div");
+    card.className = "card " + f.sev;
+    card.id = "card-" + f.id;
+    var loc = f.line > 0
+      ? '<span class="loc"><b>' + esc(f.file.split("/").pop()) + "</b>:" + f.line + "</span>"
+      : '<span class="loc"><b>' + esc(f.file) + "</b></span>";
+    var verifyBadge = f.verify ? '<span class="verify">Verify before merge</span>' : "";
+    card.innerHTML =
+      '<div class="card-head"><div class="grow">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<span class="pill ' + f.sev + '">' + f.sev + "</span>" +
+          '<span class="cat">' + esc(f.cat) + "</span>" + verifyBadge +
+        "</div>" +
+        '<div class="title">' + esc(f.title) + "</div>" + loc +
+      "</div>" +
+      '<div class="seg" role="group" aria-label="triage">' +
+        '<button data-act="keep" class="on-keep">Keep</button>' +
+        '<button data-act="dismiss">Dismiss</button>' +
+      "</div></div>" +
+      '<div class="card-body">' +
+        (f.issue ? '<div class="block"><div class="h">The issue</div><p>' + esc(f.issue) + "</p></div>" : "") +
+        (f.why ? '<div class="block"><div class="h">Why it matters</div><p>' + esc(f.why) + "</p></div>" : "") +
+        (f.code ? '<div class="block"><div class="h">In the code</div><pre>' + renderCode(f.code) + "</pre></div>" : "") +
+        (f.suggestion ? '<div class="block"><div class="h">Suggested fix</div><pre>' + esc(f.suggestion) + "</pre></div>" : "") +
+        '<div class="comment-wrap"><div class="h">PR comment (editable)</div>' +
+          '<textarea data-id="' + esc(f.id) + '">' + esc(state[f.id].comment) + "</textarea></div>" +
+      "</div>";
+    container.appendChild(card);
+
+    var seg = card.querySelector(".seg");
+    seg.addEventListener("click", function (e) {
+      var btn = e.target.closest("button"); if (!btn) return;
+      var keep = btn.getAttribute("data-act") === "keep";
+      state[f.id].keep = keep;
+      card.classList.toggle("dismissed", !keep);
+      seg.children[0].className = keep ? "on-keep" : "";
+      seg.children[1].className = keep ? "" : "on-dismiss";
+      updateCounts();
+    });
+    card.querySelector("textarea").addEventListener("input", function (e) {
+      state[f.id].comment = e.target.value;
+    });
+  });
+
+  // Strengths
+  if ((DATA.strengths || []).length) {
+    document.getElementById("strengthsWrap").style.display = "";
+    document.getElementById("strengthsList").innerHTML =
+      DATA.strengths.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("");
+  }
+
+  function keptFindings() { return findings.filter(function (f) { return state[f.id].keep; }); }
+  function updateCounts() {
+    var keep = keptFindings().length;
+    document.getElementById("keepCount").textContent = keep;
+    document.getElementById("dismissCount").textContent = findings.length - keep;
+  }
+  updateCounts();
+
+  // Severity filter
+  document.getElementById("stats").addEventListener("click", function (e) {
+    var tile = e.target.closest(".stat"); if (!tile) return;
+    var sev = tile.getAttribute("data-sev");
+    if (sev === "praise") { document.getElementById("strengthsWrap").scrollIntoView({ behavior: "smooth" }); return; }
+    activeSev[sev] = !activeSev[sev];
+    tile.setAttribute("data-active", activeSev[sev]);
+    findings.forEach(function (f) {
+      if (f.sev === sev) { var el = document.getElementById("card-" + f.id); if (el) el.style.display = activeSev[sev] ? "" : "none"; }
+    });
+  });
+
+  // Event selector
+  document.getElementById("events").addEventListener("click", function (e) {
+    var el = e.target.closest(".evt"); if (!el) return;
+    event = el.getAttribute("data-evt");
+    Array.prototype.forEach.call(this.children, function (c) { c.classList.toggle("sel", c === el); });
+  });
+
+  // Post flow
+  var modalBg = document.getElementById("modalBg");
+  function openModal() {
+    var kept = keptFindings();
+    document.getElementById("modalDesc").textContent =
+      "Posting " + kept.length + " comment" + (kept.length === 1 ? "" : "s") + " to PR #" + pr.number +
+      ". Line-anchored findings post inline; the rest go in the review body.";
+    document.getElementById("preview").innerHTML = kept.map(function (f) {
+      var loc = f.line > 0 ? esc(f.file.split("/").pop()) + ":" + f.line : esc(f.file);
+      return "<li><b>" + loc + "</b> — " + esc(state[f.id].comment.slice(0, 100)) + (state[f.id].comment.length > 100 ? "…" : "") + "</li>";
+    }).join("") || "<li>No comments selected.</li>";
+    document.getElementById("postStatus").textContent = "";
+    document.getElementById("postStatus").className = "status";
+    document.getElementById("confirmPost").disabled = false;
+    modalBg.classList.add("open");
+  }
+  document.getElementById("postBtn").addEventListener("click", openModal);
+  document.getElementById("closeModal").addEventListener("click", function () { modalBg.classList.remove("open"); });
+  modalBg.addEventListener("click", function (e) { if (e.target === modalBg) modalBg.classList.remove("open"); });
+
+  document.getElementById("confirmPost").addEventListener("click", function () {
+    var kept = keptFindings();
+    var payload = {
+      event: event,
+      summary: DATA.summary || "",
+      comments: kept.map(function (f) {
+        return { id: f.id, file: f.file, line: f.line, body: state[f.id].comment };
+      }),
+    };
+    var status = document.getElementById("postStatus");
+    status.textContent = "Posting…"; status.className = "status";
+    this.disabled = true;
+    fetch("/api/post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) {
+          status.textContent = res.mode === "review" ? "✓ Posted as a review" + (res.inlineCount ? " (" + res.inlineCount + " inline)" : "") : "✓ Posted as a comment";
+          status.className = "status ok";
+          if (res.url) status.innerHTML += ' — <a href="' + esc(res.url) + '" target="_blank" rel="noopener">view</a>';
+          toast("Posted to GitHub");
+        } else {
+          status.textContent = "✗ " + (res.error || "Post failed");
+          status.className = "status err";
+          document.getElementById("confirmPost").disabled = false;
+        }
+      })
+      .catch(function (err) {
+        status.textContent = "✗ " + err;
+        status.className = "status err";
+        document.getElementById("confirmPost").disabled = false;
+      });
+  });
+
+  function toast(msg) {
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("show");
+    setTimeout(function () { t.classList.remove("show"); }, 1900);
+  }
+})();
+</script>
+</body>
+</html>
