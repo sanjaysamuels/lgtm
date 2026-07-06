@@ -1,34 +1,40 @@
 // Posts the triaged review back to GitHub via `gh`.
 
 import { ghWithStdin } from "./fetch.ts";
-import type { PostPayload, PostResult, PrContext } from "./types.ts";
+import type {
+  PostComment,
+  PostPayload,
+  PostResult,
+  PrContext,
+} from "./types.ts";
 
-function isInline(file: string, line: number): boolean {
-  // A real, line-anchored finding: a path with a directory separator and a
-  // positive line number. PR-level items (line 0, label strings) go in the body.
-  return line > 0 && file.includes("/") && !file.includes(" ");
+// A finding is line-anchored (posts inline) when it has a positive line number
+// and its file is one the PR actually changed. Matching against the real changed
+// files is what tells a genuine path apart from a PR-level label, and unlike a
+// string heuristic it handles paths that contain spaces.
+function isInline(file: string, line: number, changed: Set<string>): boolean {
+  return line > 0 && changed.has(file);
 }
 
-function buildBody(payload: PostPayload, prLevel: { body: string }[]): string {
-  const parts: string[] = [];
-  if (payload.summary.trim()) parts.push(payload.summary.trim());
-  if (prLevel.length) {
-    parts.push(
-      "**Additional notes**\n" +
-        prLevel.map((c) => `- ${c.body}`).join("\n"),
-    );
-  }
-  parts.push("_Reviewed with lgtm._");
-  return parts.join("\n\n");
+// The posted review body carries only genuine PR-level findings (the ones with
+// no diff line to attach to). It omits the AI summary and any tool signature, so
+// what lands on the PR is just the reviewer's comments. When every finding is
+// inline the body is empty, which GitHub accepts for a review that has comments.
+function buildBody(prLevel: PostComment[]): string {
+  return prLevel
+    .map((c) => c.body)
+    .join("\n\n")
+    .trim();
 }
 
 export async function postReview(
   pr: PrContext,
   payload: PostPayload,
 ): Promise<PostResult> {
-  const inline = payload.comments.filter((c) => isInline(c.file, c.line));
-  const prLevel = payload.comments.filter((c) => !isInline(c.file, c.line));
-  const body = buildBody(payload, prLevel);
+  const changed = new Set(pr.files.map((f) => f.path));
+  const inline = payload.comments.filter((c) => isInline(c.file, c.line, changed));
+  const prLevel = payload.comments.filter((c) => !isInline(c.file, c.line, changed));
+  const body = buildBody(prLevel);
 
   const reviewPayload = {
     event: payload.event,
@@ -93,15 +99,14 @@ function buildAggregate(
   payload: PostPayload,
   reason: string,
 ): string {
-  const lines: string[] = [`## Review — PR #${pr.number}`, ""];
-  if (payload.summary.trim()) lines.push(payload.summary.trim(), "");
+  const lines: string[] = [`## review of PR #${pr.number}`, ""];
   for (const c of payload.comments) {
     const loc = c.line > 0 ? `\`${c.file}:${c.line}\`` : `\`${c.file}\``;
-    lines.push(`- **${loc}** — ${c.body}`);
+    lines.push(`- ${loc}: ${c.body}`);
   }
   lines.push(
     "",
-    `_Posted as a single comment because inline placement was rejected (${reason.slice(0, 160)}). Reviewed with lgtm._`,
+    `_(posted as one comment because inline placement was rejected: ${reason.slice(0, 160)})_`,
   );
   return lines.join("\n");
 }
