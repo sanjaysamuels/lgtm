@@ -69,11 +69,23 @@ Schema:
       "why": string,               // why it matters
       "code": string,              // short snippet (may use +/- prefixes for diff lines)
       "suggestion": string,        // concrete fix
-      "comment": string            // ready-to-post PR comment, addressed to the author
+      "comment": string            // ready-to-post PR comment, in the author's voice (see Comment style)
     }
   ],
   "strengths": [ string ]          // things done well, phrased for the review
 }
+
+## Comment style (applies to the "comment" field only)
+Write each "comment" the way this reviewer writes: short, to the point, and in
+all lowercase. No capital letters anywhere, including the first word and proper
+nouns. One or two sentences, plain and direct — no preamble, no pleasantries, no
+"consider" hedging. Say the thing. Backticked \`code\`/identifiers are fine as-is.
+Examples of the tone:
+  - "this misses ongoing admissions — dischargedAt is null so gte never matches. add a { dischargedAt: { eq: null } } branch like drug_user does."
+  - "swallowing the error here hides a failing baseline. log it before returning null."
+  - "no tests for this filter change on a hotfix branch. can we add one?"
+Only the "comment" field uses this style — keep "title", "issue", "why", and
+"suggestion" in normal prose so the triage UI stays readable.
 
 Rank findings most-severe first. If there are no findings, return an empty array.`;
 }
