@@ -8,12 +8,60 @@ import type {
   PrContext,
 } from "./types.ts";
 
-// A finding is line-anchored (posts inline) when it has a positive line number
-// and its file is one the PR actually changed. Matching against the real changed
-// files is what tells a genuine path apart from a PR-level label, and unlike a
-// string heuristic it handles paths that contain spaces.
-function isInline(file: string, line: number, changed: Set<string>): boolean {
-  return line > 0 && changed.has(file);
+// Builds, per changed file, the set of new-file line numbers that GitHub will
+// accept an inline comment on: the added ("+") and context (" ") lines inside
+// each hunk. Deleted ("-") lines don't advance the new-file counter. This is the
+// source of truth for whether a finding can be posted inline.
+function commentableLinesByFile(diff: string): Map<string, Set<number>> {
+  const byFile = new Map<string, Set<number>>();
+  let cur: Set<number> | null = null;
+  let newLine = 0;
+  for (const raw of diff.split("\n")) {
+    if (raw.startsWith("diff --git") || raw.startsWith("index ")) {
+      cur = null;
+      continue;
+    }
+    if (raw.startsWith("--- ")) continue;
+    if (raw.startsWith("+++ ")) {
+      const m = raw.match(/^\+\+\+ b\/(.*)$/);
+      if (m) {
+        cur = new Set<number>();
+        byFile.set(m[1].replace(/\t.*$/, ""), cur); // strip trailing tab on space paths
+      } else {
+        cur = null; // e.g. "+++ /dev/null" for a deleted file
+      }
+      continue;
+    }
+    const hunk = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      newLine = Number(hunk[1]);
+      continue;
+    }
+    if (!cur) continue;
+    const c = raw[0];
+    if (c === "+") {
+      cur.add(newLine);
+      newLine++;
+    } else if (c === " ") {
+      cur.add(newLine);
+      newLine++;
+    } else if (c === "-") {
+      // left side only; does not advance the new-file line counter
+    }
+  }
+  return byFile;
+}
+
+// A finding posts inline only when it has a positive line that GitHub will
+// actually accept on that file. Anything else (line 0, a PR-level label, or a
+// line outside the diff) goes in the review body instead of sinking the whole
+// inline review with a 422.
+function canInline(
+  file: string,
+  line: number,
+  commentable: Map<string, Set<number>>,
+): boolean {
+  return line > 0 && (commentable.get(file)?.has(line) ?? false);
 }
 
 // The posted review body carries only genuine PR-level findings (the ones with
@@ -31,9 +79,9 @@ export async function postReview(
   pr: PrContext,
   payload: PostPayload,
 ): Promise<PostResult> {
-  const changed = new Set(pr.files.map((f) => f.path));
-  const inline = payload.comments.filter((c) => isInline(c.file, c.line, changed));
-  const prLevel = payload.comments.filter((c) => !isInline(c.file, c.line, changed));
+  const commentable = commentableLinesByFile(pr.diff);
+  const inline = payload.comments.filter((c) => canInline(c.file, c.line, commentable));
+  const prLevel = payload.comments.filter((c) => !canInline(c.file, c.line, commentable));
   const body = buildBody(prLevel);
 
   const reviewPayload = {
