@@ -141,6 +141,7 @@
     </div>
     <div class="counter"><b id="keepCount">0</b> to post · <span id="dismissCount">0</span> dismissed</div>
     <button class="btn primary" id="postBtn">Post to GitHub →</button>
+    <button class="btn" id="doneBtn" title="Stop the local review session">Done</button>
   </div>
 </header>
 
@@ -366,6 +367,19 @@
         status.className = "status err";
         document.getElementById("confirmPost").disabled = false;
       });
+  });
+
+  // Done: shut down the local server so the user doesn't need the terminal.
+  document.getElementById("doneBtn").addEventListener("click", function () {
+    if (!confirm("Stop this review session? The local server will shut down. Make sure you've posted everything you want first.")) return;
+    // Fire-and-forget: the server exits right after responding, so a network
+    // error here is expected and also means it stopped.
+    fetch("/api/close", { method: "POST" }).catch(function () {}).finally(function () {
+      document.body.innerHTML =
+        '<div style="max-width:520px;margin:20vh auto;text-align:center;font-family:var(--sans);color:var(--text)">' +
+        '<div style="font-size:16px;font-weight:650">session stopped</div>' +
+        '<div style="font-size:13px;color:var(--text-muted);margin-top:8px">the lgtm server has shut down. you can close this tab.</div></div>';
+    });
   });
 
   function toast(msg) {

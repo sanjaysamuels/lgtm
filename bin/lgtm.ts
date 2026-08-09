@@ -106,9 +106,10 @@ Options:
       }
     },
     onClose: () => {
-      console.log(c.dim("\n→ Closing."));
+      console.log(c.dim("\n→ Session stopped from the browser."));
       running.close();
-      process.exit(0);
+      // Give the HTTP response a moment to flush before the process exits.
+      setTimeout(() => process.exit(0), 150);
     },
   });
 

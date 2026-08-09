@@ -1,10 +1,7 @@
 // Fetches PR context and diff from GitHub via the `gh` CLI.
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import type { PrContext, PrFile } from "./types.ts";
-
-const execFileP = promisify(execFile);
 
 export interface PrRef {
   repo: string;
@@ -23,19 +20,29 @@ export function parsePrRef(input: string): PrRef {
   );
 }
 
-async function gh(args: string[], stdin?: string): Promise<string> {
-  try {
-    const { stdout } = await execFileP("gh", args, {
-      maxBuffer: 32 * 1024 * 1024,
-      ...(stdin !== undefined ? { input: stdin } : {}),
-    });
-    return stdout;
-  } catch (e) {
-    const err = e as { stderr?: string; message?: string };
-    throw new Error(
-      `gh ${args.join(" ")} failed: ${err.stderr?.trim() || err.message || String(e)}`,
+function gh(args: string[], stdin?: string): Promise<string> {
+  // Uses spawn (not async execFile) because we must write the request body to
+  // stdin and close it. Async execFile ignores its `input` option, which leaves
+  // `gh --input -` blocked on stdin forever.
+  return new Promise((resolve, reject) => {
+    const child = spawn("gh", args, { stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d) => (out += d.toString()));
+    child.stderr.on("data", (d) => (err += d.toString()));
+    child.on("error", (e) =>
+      reject(new Error(`Failed to launch \`gh\`. Is the GitHub CLI installed? ${e.message}`)),
     );
-  }
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`gh ${args.join(" ")} failed: ${err.trim() || out.trim()}`));
+      } else {
+        resolve(out);
+      }
+    });
+    if (stdin !== undefined) child.stdin.write(stdin);
+    child.stdin.end();
+  });
 }
 
 /** Runs `gh` with data piped to stdin (used for `gh api --input -`). */
