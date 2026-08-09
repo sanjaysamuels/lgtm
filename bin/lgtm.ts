@@ -5,6 +5,8 @@
 //   lgtm <owner/repo#123 | PR-url> [--model <name>] [--port <n>] [--no-open]
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fetchPr, parsePrRef } from "../src/fetch.ts";
 import { reviewPr } from "../src/review.ts";
@@ -34,12 +36,37 @@ function openBrowser(url: string): void {
   child.unref();
 }
 
+// Reads --docs files and --context text into one block that gets handed to the
+// reviewer as authoritative extra context. Fails loudly if a doc path can't be
+// read, since the reviewer asked for it on purpose.
+function loadExtraContext(
+  docs: string[] | undefined,
+  context: string | undefined,
+): string | undefined {
+  const parts: string[] = [];
+  for (const p of docs ?? []) {
+    let content: string;
+    try {
+      content = readFileSync(resolve(p), "utf8");
+    } catch (e) {
+      throw new Error(
+        `Could not read --docs file "${p}": ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    parts.push(`### ${basename(p)}\n${content.trim()}`);
+  }
+  if (context?.trim()) parts.push(`### Reviewer notes\n${context.trim()}`);
+  return parts.length ? parts.join("\n\n") : undefined;
+}
+
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
       model: { type: "string" },
       port: { type: "string" },
+      docs: { type: "string", multiple: true },
+      context: { type: "string" },
       "no-open": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
@@ -54,6 +81,8 @@ Usage:
 Options:
   --model <name>   Claude model to review with (default: your CLI default)
   --port <n>       Port for the local GUI (default: random free port)
+  --docs <path>    Attach a doc file as extra review context (repeatable)
+  --context <text> Inline notes to weigh the review against
   --no-open        Don't auto-open the browser
   -h, --help       Show this help
 `);
@@ -63,6 +92,9 @@ Options:
   const ref = parsePrRef(positionals[0]);
   const label = `${ref.repo}#${ref.number}`;
 
+  // Read docs first so a bad --docs path fails before the network fetch.
+  const extraContext = loadExtraContext(values.docs, values.context);
+
   process.stdout.write(c.dim(`→ Fetching ${label}…`) + "\n");
   const pr = await fetchPr(ref);
   console.log(
@@ -71,10 +103,20 @@ Options:
     ),
   );
 
+  if (extraContext) {
+    const docCount = values.docs?.length ?? 0;
+    const bits = [
+      docCount ? `${docCount} doc${docCount === 1 ? "" : "s"}` : "",
+      values.context ? "inline notes" : "",
+    ].filter(Boolean);
+    console.log(c.dim(`  + extra context: ${bits.join(", ")}`));
+  }
+
   process.stdout.write(c.dim("→ Reviewing to high standards (this can take a minute)…") + "\n");
   const started = Date.now();
   const review = await reviewPr(pr, {
     model: values.model,
+    extraContext,
     onProgress: (m) => process.stdout.write(c.dim(`  ${m}`) + "\n"),
   });
   const secs = ((Date.now() - started) / 1000).toFixed(0);

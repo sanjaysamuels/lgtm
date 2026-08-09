@@ -104,13 +104,15 @@ function str(v: unknown, fallback: string): string {
 export interface ReviewOptions {
   model?: string;
   onProgress?: (msg: string) => void;
+  /** Extra documentation (project standards, design docs, notes) to weigh the review against. */
+  extraContext?: string;
 }
 
 export async function reviewPr(
   pr: PrContext,
   opts: ReviewOptions = {},
 ): Promise<ReviewResult> {
-  const prompt = buildReviewPrompt(pr);
+  const prompt = buildReviewPrompt(pr, opts.extraContext);
   const args = ["-p", "--output-format", "json"];
   if (opts.model) args.push("--model", opts.model);
 

@@ -2,10 +2,22 @@
 
 import type { PrContext } from "./types.ts";
 
-export function buildReviewPrompt(pr: PrContext): string {
+export function buildReviewPrompt(pr: PrContext, extraContext?: string): string {
   const fileList = pr.files
     .map((f) => `  ${f.path} (+${f.additions} -${f.deletions})`)
     .join("\n");
+
+  const contextSection = extraContext?.trim()
+    ? `
+
+## Additional context supplied by the reviewer
+The reviewer attached the documentation below (project standards, design docs,
+requirements, or domain notes). Treat it as authoritative for this review: weight
+the diff against it, and flag code that contradicts or ignores it. Where it
+conflicts with a generic best practice, the reviewer's docs win.
+
+${extraContext.trim()}`
+    : "";
 
   return `You are a meticulous senior engineer performing a pull-request review at the
 highest professional standard. Review the diff below and report only findings you
@@ -44,6 +56,7 @@ ${fileList}
 
 PR description:
 ${pr.body || "(none)"}
+${contextSection}
 
 ## Diff
 \`\`\`diff
