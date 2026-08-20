@@ -143,10 +143,18 @@ export async function deepReviewPr(
   let done = 0;
   const perDimension = await pool(dimensions, DIMENSION_CONCURRENCY, async (dim) => {
     const others = dimNames.filter((n) => n !== dim.name);
-    const out = await claudeJson<Record<string, unknown>>(
-      P.buildDimensionPrompt(pr, dim, intake, anatomy, others, opts.extraContext),
-      { model },
-    );
+    let out: Record<string, unknown>;
+    try {
+      out = await claudeJson<Record<string, unknown>>(
+        P.buildDimensionPrompt(pr, dim, intake, anatomy, others, opts.extraContext),
+        { model },
+      );
+    } catch (e) {
+      // One flaky dimension must not sink the whole review; skip it and go on.
+      done++;
+      progress(`  skipped ${done}/${dimensions.length}: ${dim.name} (${e instanceof Error ? e.message.split("\n")[0] : e})`);
+      return [] as RawFinding[];
+    }
     done++;
     progress(`  reviewed ${done}/${dimensions.length}: ${dim.name}`);
     const raw = Array.isArray(out.findings) ? out.findings : [];
@@ -179,10 +187,14 @@ export async function deepReviewPr(
 
   // Phase 5: Adversary — challenge every finding, drop the false positives.
   progress(`adversary: challenging ${findings.length} findings…`);
-  const verdicts = await claudeJson<unknown>(
-    P.buildAdversaryPrompt(pr, findings),
-    { model },
-  );
+  let verdicts: unknown = [];
+  try {
+    verdicts = await claudeJson<unknown>(P.buildAdversaryPrompt(pr, findings), { model });
+  } catch (e) {
+    // Fail open: if the adversary pass can't be parsed, keep every finding rather
+    // than dropping the whole review. They just don't get a verdict badge.
+    progress(`adversary: skipped (${e instanceof Error ? e.message.split("\n")[0] : e})`);
+  }
   const byIndex = new Map<number, AdversaryVerdict>();
   if (Array.isArray(verdicts)) {
     for (const v of verdicts) {

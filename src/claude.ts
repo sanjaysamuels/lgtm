@@ -35,22 +35,68 @@ function runClaude(args: string[], input: string): Promise<string> {
   });
 }
 
-/** Pulls a JSON value out of model output that may include prose or a code fence. */
-export function extractJson(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) return JSON.parse(fenced[1].trim());
-  // Objects and arrays are both valid top-level payloads in this pipeline.
-  const objStart = text.indexOf("{");
-  const arrStart = text.indexOf("[");
-  const start =
-    arrStart !== -1 && (objStart === -1 || arrStart < objStart) ? arrStart : objStart;
-  const open = text[start];
-  const close = open === "[" ? "]" : "}";
-  const end = text.lastIndexOf(close);
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error(`No JSON found in model output:\n${text.slice(0, 500)}`);
+function tryParse(s: string): unknown | undefined {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return undefined;
   }
-  return JSON.parse(text.slice(start, end + 1));
+}
+
+// Returns the balanced {...} or [...] starting at startIdx, respecting string
+// literals and escapes so braces/brackets inside string values don't confuse the
+// match. This is why we don't use indexOf/lastIndexOf: a `}` inside an evidence
+// string would otherwise cut the payload short.
+function balancedSlice(text: string, startIdx: number): string | undefined {
+  const open = text[startIdx];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === open) depth++;
+    else if (ch === close && --depth === 0) return text.slice(startIdx, i + 1);
+  }
+  return undefined;
+}
+
+/**
+ * Pulls a JSON value out of model output that may include prose or a code fence.
+ * Objects and arrays are both valid top-level payloads in this pipeline. Tries,
+ * in order: the whole string, each fenced block, a greedy fence (for JSON whose
+ * own strings contain ``` fences), then a balanced scan from every `{`/`[`.
+ */
+export function extractJson(text: string): unknown {
+  const whole = tryParse(text.trim());
+  if (whole !== undefined) return whole;
+
+  for (const m of text.matchAll(/```(?:json)?\s*\n?([\s\S]*?)```/g)) {
+    const p = tryParse(m[1].trim());
+    if (p !== undefined) return p;
+  }
+  const greedy = text.match(/```(?:json)?\s*\n?([\s\S]*)```/);
+  if (greedy) {
+    const p = tryParse(greedy[1].trim());
+    if (p !== undefined) return p;
+  }
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "{" || text[i] === "[") {
+      const slice = balancedSlice(text, i);
+      if (slice) {
+        const p = tryParse(slice);
+        if (p !== undefined) return p;
+      }
+    }
+  }
+  throw new Error(`No parseable JSON found in model output:\n${text.slice(0, 800)}`);
 }
 
 export interface ClaudeJsonOptions {
