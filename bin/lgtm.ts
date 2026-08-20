@@ -67,6 +67,7 @@ async function main(): Promise<void> {
       port: { type: "string" },
       docs: { type: "string", multiple: true },
       context: { type: "string" },
+      deep: { type: "boolean" },
       "no-open": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
@@ -83,6 +84,9 @@ Options:
   --port <n>       Port for the local GUI (default: random free port)
   --docs <path>    Attach a doc file as extra review context (repeatable)
   --context <text> Inline notes to weigh the review against
+  --deep           Thorough multi-phase review (pr-af protocol): intake, anatomy,
+                   planning, parallel dimension reviews, adversary, post-worthiness.
+                   Slower and costs more; best for high-stakes PRs.
   --no-open        Don't auto-open the browser
   -h, --help       Show this help
 `);
@@ -112,11 +116,18 @@ Options:
     console.log(c.dim(`  + extra context: ${bits.join(", ")}`));
   }
 
-  process.stdout.write(c.dim("→ Reviewing to high standards (this can take a minute)…") + "\n");
+  process.stdout.write(
+    c.dim(
+      values.deep
+        ? "→ Deep review (pr-af protocol: intake → anatomy → plan → dimensions → adversary). This takes a few minutes…"
+        : "→ Reviewing to high standards (this can take a minute)…",
+    ) + "\n",
+  );
   const started = Date.now();
   const review = await reviewPr(pr, {
     model: values.model,
     extraContext,
+    deep: values.deep,
     onProgress: (m) => process.stdout.write(c.dim(`  ${m}`) + "\n"),
   });
   const secs = ((Date.now() - started) / 1000).toFixed(0);

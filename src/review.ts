@@ -1,56 +1,11 @@
 // Runs the review by shelling out to the Claude Code CLI in headless mode.
+// Default is a single high-standards pass; `deep: true` runs the multi-phase
+// pr-af-style pipeline in ./protocol.
 
-import { spawn } from "node:child_process";
+import { claudeJson } from "./claude.ts";
 import type { Finding, PrContext, ReviewResult, Severity } from "./types.ts";
 import { buildReviewPrompt } from "./prompt.ts";
-
-interface ClaudeEnvelope {
-  is_error?: boolean;
-  result?: string;
-  subtype?: string;
-}
-
-function runClaude(args: string[], input: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("claude", args, {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (err += d.toString()));
-    child.on("error", (e) =>
-      reject(
-        new Error(
-          `Failed to launch \`claude\`. Is Claude Code installed and on PATH? ${e.message}`,
-        ),
-      ),
-    );
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`claude exited with code ${code}: ${err.trim() || out.trim()}`));
-      } else {
-        resolve(out);
-      }
-    });
-    child.stdin.write(input);
-    child.stdin.end();
-  });
-}
-
-/** Pulls a JSON object out of model output that may include prose or a fence. */
-function extractJson(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) {
-    return JSON.parse(fenced[1].trim());
-  }
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error(`No JSON object found in review output:\n${text.slice(0, 500)}`);
-  }
-  return JSON.parse(text.slice(start, end + 1));
-}
+import { deepReviewPr } from "./protocol/pipeline.ts";
 
 const VALID_SEV: Severity[] = ["critical", "warning", "info"];
 
@@ -106,31 +61,24 @@ export interface ReviewOptions {
   onProgress?: (msg: string) => void;
   /** Extra documentation (project standards, design docs, notes) to weigh the review against. */
   extraContext?: string;
+  /** Run the deep multi-phase pr-af-style pipeline instead of a single pass. */
+  deep?: boolean;
 }
 
 export async function reviewPr(
   pr: PrContext,
   opts: ReviewOptions = {},
 ): Promise<ReviewResult> {
+  if (opts.deep) {
+    return deepReviewPr(pr, {
+      model: opts.model,
+      extraContext: opts.extraContext,
+      onProgress: opts.onProgress,
+    });
+  }
+
   const prompt = buildReviewPrompt(pr, opts.extraContext);
-  const args = ["-p", "--output-format", "json"];
-  if (opts.model) args.push("--model", opts.model);
-
   opts.onProgress?.("Running review with Claude…");
-  const stdout = await runClaude(args, prompt);
-
-  let envelope: ClaudeEnvelope;
-  try {
-    envelope = JSON.parse(stdout) as ClaudeEnvelope;
-  } catch {
-    throw new Error(`Could not parse claude output as JSON:\n${stdout.slice(0, 500)}`);
-  }
-  if (envelope.is_error) {
-    throw new Error(`Claude reported an error: ${envelope.result ?? envelope.subtype}`);
-  }
-  if (!envelope.result) {
-    throw new Error("Claude returned an empty result.");
-  }
-
-  return normalize(extractJson(envelope.result));
+  const raw = await claudeJson(prompt, { model: opts.model });
+  return normalize(raw);
 }

@@ -45,6 +45,7 @@ lgtm https://github.com/owner/repo/pull/42
 lgtm owner/repo#42 --model claude-opus-4-8 --port 8080 --no-open
 lgtm owner/repo#42 --docs docs/standards.md --docs ARCHITECTURE.md
 lgtm owner/repo#42 --context "this is a hotfix branch, be strict about tests"
+lgtm owner/repo#42 --deep
 ```
 
 | Flag | Meaning |
@@ -53,8 +54,28 @@ lgtm owner/repo#42 --context "this is a hotfix branch, be strict about tests"
 | `--port <n>`     | Port for the local GUI (default: a random free port) |
 | `--docs <path>`  | Attach a doc file as extra review context (repeatable) |
 | `--context <text>` | Inline notes the review is weighed against |
+| `--deep`         | Thorough multi-phase review (see below) |
 | `--no-open`      | Don't auto-open the browser |
 | `-h, --help`     | Show help |
+
+### Deep review (`--deep`)
+
+The default review is a single high-standards pass. `--deep` runs a multi-phase
+pipeline ported from [Agent-Field/pr-af](https://github.com/Agent-Field/pr-af), the
+top open-source reviewer on Code-Review-Bench. It mimics how a senior engineer
+actually reviews, one `claude` call per phase:
+
+1. **intake** classifies the PR (type, complexity, risk signals, AI-generated confidence)
+2. **anatomy** works out what the code actually does and where the risk surfaces are
+3. **planning** crafts review *dimensions* specific to this PR (not a generic checklist)
+4. **dimension reviews** run in parallel, each with hard false-positive gates (reachability proof, evidence chain, confidence >= 0.6)
+5. **adversary** challenges every finding against the diff and drops the false positives
+6. **post-worthiness** decides which survivors are actually worth posting
+
+Findings carry their evidence chain, confidence, and adversary verdict into the GUI.
+The ones the post-worthiness phase didn't recommend start dismissed (still visible,
+one click to keep). It is slower and costs more tokens than the default pass; reach
+for it on high-stakes PRs.
 
 ### Extra documentation
 

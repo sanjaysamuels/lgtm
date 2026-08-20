@@ -188,7 +188,12 @@
   var DATA = JSON.parse(document.getElementById("review-data").textContent);
   var findings = DATA.findings || [];
   var state = {};
-  findings.forEach(function (f) { state[f.id] = { keep: true, comment: f.comment }; });
+  // Deep-review findings carry a `recommended` flag from the post-worthiness
+  // phase; the ones it didn't recommend start dismissed (still visible, one
+  // click to keep). Fast-pass findings have no flag and all start kept.
+  findings.forEach(function (f) {
+    state[f.id] = { keep: f.recommended === false ? false : true, comment: f.comment };
+  });
   var activeSev = { critical: true, warning: true, info: true };
   var event = "COMMENT";
 
@@ -245,11 +250,16 @@
       ? '<span class="loc"><b>' + esc(f.file.split("/").pop()) + "</b>:" + f.line + "</span>"
       : '<span class="loc"><b>' + esc(f.file) + "</b></span>";
     var verifyBadge = f.verify ? '<span class="verify">Verify before merge</span>' : "";
+    // Deep-review signal: adversary verdict and reviewer confidence.
+    var deepBadge = "";
+    if (f.verdict === "escalated") deepBadge += '<span class="verify">Escalated</span>';
+    if (typeof f.confidence === "number")
+      deepBadge += '<span class="cat">conf ' + f.confidence.toFixed(2) + "</span>";
     card.innerHTML =
       '<div class="card-head"><div class="grow">' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
           '<span class="pill ' + f.sev + '">' + f.sev + "</span>" +
-          '<span class="cat">' + esc(f.cat) + "</span>" + verifyBadge +
+          '<span class="cat">' + esc(f.cat) + "</span>" + verifyBadge + deepBadge +
         "</div>" +
         '<div class="title">' + esc(f.title) + "</div>" + loc +
       "</div>" +
@@ -280,6 +290,12 @@
     card.querySelector("textarea").addEventListener("input", function (e) {
       state[f.id].comment = e.target.value;
     });
+    // Reflect a start-dismissed default (non-recommended deep findings).
+    if (!state[f.id].keep) {
+      card.classList.add("dismissed");
+      seg.children[0].className = "";
+      seg.children[1].className = "on-dismiss";
+    }
   });
 
   // Strengths

@@ -26,6 +26,14 @@ export interface Finding {
   suggestion: string;
   /** Ready-to-post PR comment (the human may edit it before posting). */
   comment: string;
+  /** Deep pipeline only: step-by-step reachability/failure chain. */
+  evidence?: string;
+  /** Deep pipeline only: reviewer confidence, 0.0-1.0. */
+  confidence?: number;
+  /** Deep pipeline only: adversary ruling on the finding. */
+  verdict?: "confirmed" | "escalated";
+  /** Deep pipeline only: post-worthiness judged this worth posting. */
+  recommended?: boolean;
 }
 
 export interface ReviewResult {
