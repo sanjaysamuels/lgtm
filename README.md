@@ -43,14 +43,25 @@ node bin/lgtm.ts owner/repo#123
 lgtm greensheart/greensheart-app#213
 lgtm https://github.com/owner/repo/pull/42
 lgtm owner/repo#42 --model claude-opus-4-8 --port 8080 --no-open
+lgtm owner/repo#42 --docs docs/standards.md --docs ARCHITECTURE.md
+lgtm owner/repo#42 --context "this is a hotfix branch, be strict about tests"
 ```
 
 | Flag | Meaning |
 |------|---------|
 | `--model <name>` | Claude model to review with (default: your CLI default) |
 | `--port <n>`     | Port for the local GUI (default: a random free port) |
+| `--docs <path>`  | Attach a doc file as extra review context (repeatable) |
+| `--context <text>` | Inline notes the review is weighed against |
 | `--no-open`      | Don't auto-open the browser |
 | `-h, --help`     | Show help |
+
+### Extra documentation
+
+`--docs` and `--context` feed the reviewer authoritative context beyond the diff:
+project standards, design docs, requirements, or a note about the branch. The
+review weighs the diff against them and flags code that contradicts or ignores
+them. Pass `--docs` once per file, and `--context` for a quick inline note.
 
 The command fetches the PR, runs the review, then serves the triage GUI and opens
 it. In the browser you:
